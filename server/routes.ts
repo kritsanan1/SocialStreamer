@@ -9,18 +9,22 @@ interface JwtPayload {
   userId: string;
 }
 
-// JWT functions
+// JWT functions - using mock implementation for now
 const signJWT = (payload: JwtPayload, secret: string, options?: { expiresIn: string }): string => {
   // Mock JWT implementation for development
   return `jwt_${btoa(JSON.stringify(payload))}_${Date.now()}`;
 };
 
 const verifyJWT = (token: string, secret: string): JwtPayload => {
-  // Mock JWT verification for development
+  // Mock JWT verification for development  
   try {
+    if (!token.startsWith('jwt_')) {
+      throw new Error('Invalid token format');
+    }
     const payload = JSON.parse(atob(token.split('_')[1]));
     return payload;
-  } catch {
+  } catch (error) {
+    console.error('JWT verification error:', error);
     throw new Error('Invalid token');
   }
 };
@@ -36,7 +40,12 @@ interface AuthRequest extends Request {
 // Auth middleware
 const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace("Bearer ", "");
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ message: "No token provided" });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
     if (!token) {
       return res.status(401).json({ message: "Authentication required" });
     }
@@ -45,7 +54,8 @@ const authenticate = async (req: AuthRequest, res: Response, next: NextFunction)
     req.userId = decoded.userId;
     next();
   } catch (error) {
-    res.status(401).json({ message: "Invalid token" });
+    console.error("Authentication error:", error);
+    res.status(403).json({ message: "Invalid token" });
   }
 };
 
@@ -141,10 +151,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Platform is required" });
       }
 
+      console.log("Looking for user with ID:", req.userId);
       const user = await storage.getUser(req.userId!);
       if (!user) {
+        console.error("User not found for ID:", req.userId);
         return res.status(404).json({ message: "User not found" });
       }
+      console.log("Found user:", user.email);
 
       // If user doesn't have an Ayrshare profile, create one
       if (!user.ayrshareProfileKey) {
