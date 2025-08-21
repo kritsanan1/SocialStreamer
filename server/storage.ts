@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type SocialAccount, type InsertSocialAccount, type Post, type InsertPost, type TeamMember, type InsertTeamMember, type Analytics, type InsertAnalytics, type PostWithAnalytics, type UserWithSocialAccounts } from "@shared/schema";
+import { type User, type InsertUser, type SocialAccount, type InsertSocialAccount, type Post, type InsertPost, type TeamMember, type InsertTeamMember, type Analytics, type InsertAnalytics, type PostWithAnalytics, type UserWithSocialAccounts, type OAuthSession, type InsertOAuthSession } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -39,6 +39,11 @@ export interface IStorage {
   getAnalyticsByPostId(postId: string): Promise<Analytics[]>;
   createAnalytics(analytics: InsertAnalytics): Promise<Analytics>;
   updateAnalytics(id: string, updates: Partial<Analytics>): Promise<Analytics>;
+
+  // OAuth Sessions
+  createOAuthSession(session: InsertOAuthSession): Promise<OAuthSession>;
+  getOAuthSessionByState(state: string): Promise<OAuthSession | undefined>;
+  deleteOAuthSession(id: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -47,6 +52,7 @@ export class MemStorage implements IStorage {
   private posts: Map<string, Post> = new Map();
   private teamMembers: Map<string, TeamMember> = new Map();
   private analytics: Map<string, Analytics> = new Map();
+  private oauthSessions: Map<string, OAuthSession> = new Map();
 
   constructor() {
     this.seedData();
@@ -58,11 +64,19 @@ export class MemStorage implements IStorage {
       id: randomUUID(),
       username: "admin",
       email: "admin@example.com",
-      password: "$2a$10$hash", // In real app, this would be properly hashed
+      password: "$2b$10$R5QCnG5CtL.hP7dhBbZqvu0FoLp9XSR/vvpYRGWhP5duoTn1uZS.W", // bcrypt hash of "password"
       firstName: "John",
       lastName: "Smith",
       role: "admin",
-      profileKey: "demo-profile-key",
+      ayrshareProfileKey: "demo-profile-key",
+      ayrshareUserId: "demo-ayrshare-user-id",
+      ayrshareRefId: "demo-ref-id",
+      twoFactorEnabled: false,
+      teamId: null,
+      permissions: [],
+      lastLoginAt: null,
+      lastLoginIp: null,
+      emailVerifiedAt: new Date(),
       avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces",
       isActive: true,
       createdAt: new Date(),
@@ -370,6 +384,28 @@ export class MemStorage implements IStorage {
     };
     this.analytics.set(id, updatedAnalytics);
     return updatedAnalytics;
+  }
+
+  // OAuth Sessions methods
+  async createOAuthSession(insertSession: InsertOAuthSession): Promise<OAuthSession> {
+    const id = randomUUID();
+    const session: OAuthSession = {
+      ...insertSession,
+      id,
+      createdAt: new Date(),
+    };
+    this.oauthSessions.set(id, session);
+    return session;
+  }
+
+  async getOAuthSessionByState(state: string): Promise<OAuthSession | undefined> {
+    return Array.from(this.oauthSessions.values()).find(
+      session => session.state === state
+    );
+  }
+
+  async deleteOAuthSession(id: string): Promise<void> {
+    this.oauthSessions.delete(id);
   }
 }
 

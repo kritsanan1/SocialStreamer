@@ -2,6 +2,8 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertPostSchema, insertSocialAccountSchema } from "@shared/schema";
+import { ayrshareService } from "./ayrshare";
+import { oauthService } from "./oauth";
 // JWT type declarations
 interface JwtPayload {
   userId: string;
@@ -139,43 +141,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Platform is required" });
       }
 
-      // Check if account already exists for this platform
-      const existingAccounts = await storage.getSocialAccountsByUserId(req.userId!);
-      const existingAccount = existingAccounts.find(acc => acc.platform === platform);
-      
-      if (existingAccount) {
-        return res.status(400).json({ message: "Account already connected for this platform" });
+      const user = await storage.getUser(req.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
 
-      // In real implementation, this would initiate OAuth flow with Ayrshare
-      // For now, we'll create a pending connection
-      const accountData = {
-        userId: req.userId!,
-        platform,
-        accountId: `${platform}-${Date.now()}`,
-        accountName: `${platform.charAt(0).toUpperCase() + platform.slice(1)} Account`,
-        accountHandle: `@${platform}account`,
-        status: "pending" as const,
-      };
-
-      const account = await storage.createSocialAccount(accountData);
-      
-      // Simulate Ayrshare API connection process
-      setTimeout(async () => {
-        try {
-          await storage.updateSocialAccount(account.id, {
-            status: "connected",
-            lastSyncAt: new Date(),
-            accessToken: `encrypted_token_${Date.now()}`, // In real app, this would be encrypted
+      // If user doesn't have an Ayrshare profile, create one
+      if (!user.ayrshareProfileKey) {
+        console.log("Creating Ayrshare profile for user:", user.email);
+        const profileResponse = await ayrshareService.createUserProfile(user);
+        
+        if (profileResponse.status === "success" && profileResponse.profileKey) {
+          await storage.updateUser(user.id, {
+            ayrshareProfileKey: profileResponse.profileKey,
+            ayrshareUserId: profileResponse.userId,
+            ayrshareRefId: profileResponse.refId,
           });
-        } catch (error) {
-          console.error("Failed to update account status:", error);
+          user.ayrshareProfileKey = profileResponse.profileKey;
+        } else {
+          return res.status(500).json({ 
+            message: "Failed to create Ayrshare profile",
+            error: profileResponse.message 
+          });
         }
-      }, 2000);
+      }
 
-      res.json(account);
+      // Start OAuth flow
+      const oauthResult = await oauthService.startOAuthFlow(user, platform);
+      
+      res.json({
+        authUrl: oauthResult.authUrl,
+        state: oauthResult.state,
+        platform,
+        message: "OAuth flow initiated. Please complete authentication in the new window."
+      });
     } catch (error) {
-      res.status(400).json({ message: "Failed to connect account", error });
+      console.error("Connect social account error:", error);
+      res.status(500).json({ 
+        message: "Failed to initiate social account connection", 
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  app.get("/api/oauth/callback/:platform", async (req, res) => {
+    try {
+      const { platform } = req.params;
+      const { code, state, error: oauthError } = req.query;
+
+      if (oauthError) {
+        return res.redirect(`${process.env.CLIENT_URL || "http://localhost:5000"}/?error=${oauthError}`);
+      }
+
+      if (!code || !state) {
+        return res.redirect(`${process.env.CLIENT_URL || "http://localhost:5000"}/?error=missing_params`);
+      }
+
+      const result = await oauthService.handleOAuthCallback(
+        platform,
+        code as string,
+        state as string
+      );
+
+      if (result.success) {
+        res.redirect(`${process.env.CLIENT_URL || "http://localhost:5000"}/?connected=${platform}`);
+      } else {
+        res.redirect(`${process.env.CLIENT_URL || "http://localhost:5000"}/?error=${encodeURIComponent(result.message)}`);
+      }
+    } catch (error) {
+      console.error("OAuth callback error:", error);
+      res.redirect(`${process.env.CLIENT_URL || "http://localhost:5000"}/?error=callback_failed`);
     }
   });
 
@@ -188,10 +223,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Account not found" });
       }
 
+      const user = await storage.getUser(req.userId!);
+      if (user && user.ayrshareProfileKey) {
+        // Disconnect from Ayrshare
+        await oauthService.disconnectAccount(user, account.platform);
+      }
+
       await storage.deleteSocialAccount(id);
-      res.json({ message: "Account disconnected" });
+      res.json({ message: "Account disconnected successfully" });
     } catch (error) {
+      console.error("Disconnect account error:", error);
       res.status(500).json({ message: "Failed to disconnect account", error });
+    }
+  });
+
+  // Sync social accounts from Ayrshare
+  app.post("/api/social-accounts/sync", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const user = await storage.getUser(req.userId!);
+      if (!user || !user.ayrshareProfileKey) {
+        return res.status(400).json({ 
+          message: "User does not have an Ayrshare profile" 
+        });
+      }
+
+      await oauthService.syncUserSocialAccounts(user);
+      const accounts = await storage.getSocialAccountsByUserId(req.userId!);
+      
+      res.json({ 
+        message: "Social accounts synced successfully",
+        accounts 
+      });
+    } catch (error) {
+      console.error("Sync accounts error:", error);
+      res.status(500).json({ 
+        message: "Failed to sync social accounts", 
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
@@ -237,8 +305,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.userId,
       });
 
-      // Validate platforms
-      if (!postData.platforms || postData.platforms.length === 0) {
+      // Validate platforms - ensure it's an array
+      const platforms = Array.isArray(postData.platforms) ? postData.platforms : [];
+      if (platforms.length === 0) {
         return res.status(400).json({ message: "At least one platform is required" });
       }
 
@@ -248,7 +317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .filter(acc => acc.status === "connected")
         .map(acc => acc.platform);
       
-      const missingPlatforms = (postData.platforms as string[]).filter(platform => 
+      const missingPlatforms = platforms.filter(platform => 
         !connectedPlatforms.includes(platform)
       );
 
@@ -258,20 +327,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const post = await storage.createPost(postData);
+      const post = await storage.createPost({
+        ...postData,
+        platforms: platforms,
+      });
 
       // Handle scheduling vs immediate posting
-      if (postData.scheduledAt && new Date(postData.scheduledAt) > new Date()) {
+      const scheduledDate = postData.scheduledAt ? new Date(postData.scheduledAt) : null;
+      if (scheduledDate && scheduledDate > new Date()) {
         // Schedule for later
         await storage.updatePost(post.id, { status: "scheduled" });
-        console.log(`Post ${post.id} scheduled for ${postData.scheduledAt}`);
+        console.log(`Post ${post.id} scheduled for ${scheduledDate.toISOString()}`);
       } else {
         // Post immediately via Ayrshare API
         try {
           // In a real implementation, this would call the actual Ayrshare API
           console.log("Publishing post via Ayrshare API:", {
             post: postData.content,
-            platforms: postData.platforms,
+            platforms: platforms,
             media: postData.mediaUrls,
           });
 
@@ -279,7 +352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const ayrshareResponse = {
             id: `ayr_${Date.now()}`,
             status: "success",
-            platforms: (postData.platforms as string[]).reduce((acc: Record<string, any>, platform: string) => {
+            platforms: platforms.reduce((acc: Record<string, any>, platform: string) => {
               acc[platform] = {
                 status: "success",
                 postId: `${platform}_${Date.now()}`,
@@ -297,7 +370,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
 
           // Create mock analytics data for the post
-          for (const platform of (postData.platforms as string[])) {
+          for (const platform of platforms) {
             await storage.createAnalytics({
               postId: post.id,
               platform,
@@ -362,6 +435,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Analytics routes
+  app.get("/api/analytics", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const { postId, platform, period = "7d" } = req.query;
+      
+      if (postId) {
+        const analytics = await storage.getAnalyticsByPostId(postId as string);
+        res.json(analytics);
+      } else {
+        // Get aggregated analytics for user's posts
+        const posts = await storage.getPostsByUserId(req.userId!);
+        const allAnalytics = [];
+        
+        for (const post of posts) {
+          const postAnalytics = await storage.getAnalyticsByPostId(post.id);
+          allAnalytics.push(...postAnalytics);
+        }
+        
+        // Filter by platform if specified
+        const filteredAnalytics = platform 
+          ? allAnalytics.filter(a => a.platform === platform)
+          : allAnalytics;
+        
+        // Calculate aggregated metrics
+        const aggregated = {
+          totalPosts: new Set(filteredAnalytics.map(a => a.postId)).size,
+          totalImpressions: filteredAnalytics.reduce((sum, a) => sum + (a.impressions || 0), 0),
+          totalLikes: filteredAnalytics.reduce((sum, a) => sum + (a.likes || 0), 0),
+          totalShares: filteredAnalytics.reduce((sum, a) => sum + (a.shares || 0), 0),
+          totalComments: filteredAnalytics.reduce((sum, a) => sum + (a.comments || 0), 0),
+          totalClicks: filteredAnalytics.reduce((sum, a) => sum + (a.clicks || 0), 0),
+          averageEngagementRate: filteredAnalytics.length > 0 
+            ? filteredAnalytics.reduce((sum, a) => sum + (a.engagementRate || 0), 0) / filteredAnalytics.length
+            : 0,
+          analytics: filteredAnalytics,
+        };
+          
+        res.json(aggregated);
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get analytics", error });
+    }
+  });
+
+  // Get dashboard summary
+  app.get("/api/dashboard/summary", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const user = await storage.getUserWithSocialAccounts(req.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const posts = await storage.getPostsByUserId(req.userId!, 50);
+      const scheduledPosts = await storage.getScheduledPosts(req.userId!);
+      const socialAccounts = user.socialAccounts || [];
+      const connectedAccounts = socialAccounts.filter(acc => acc.status === "connected");
+
+      // Get recent analytics
+      const recentPosts = posts.slice(0, 10);
+      const allAnalytics = [];
+      for (const post of recentPosts) {
+        const postAnalytics = await storage.getAnalyticsByPostId(post.id);
+        allAnalytics.push(...postAnalytics);
+      }
+
+      const summary = {
+        user: { ...user, password: undefined },
+        stats: {
+          connectedAccounts: connectedAccounts.length,
+          totalPosts: posts.length,
+          scheduledPosts: scheduledPosts.length,
+          recentEngagement: allAnalytics.reduce((sum, a) => sum + (a.likes || 0) + (a.shares || 0) + (a.comments || 0), 0),
+        },
+        recentPosts: posts.slice(0, 5),
+        socialAccounts: connectedAccounts,
+        analytics: {
+          totalImpressions: allAnalytics.reduce((sum, a) => sum + (a.impressions || 0), 0),
+          totalEngagement: allAnalytics.reduce((sum, a) => sum + (a.likes || 0) + (a.shares || 0) + (a.comments || 0), 0),
+          averageEngagementRate: allAnalytics.length > 0 
+            ? allAnalytics.reduce((sum, a) => sum + (a.engagementRate || 0), 0) / allAnalytics.length
+            : 0,
+        }
+      };
+
+      res.json(summary);
+    } catch (error) {
+      console.error("Dashboard summary error:", error);
+      res.status(500).json({ message: "Failed to get dashboard summary", error });
+    }
+  });
+
   app.get("/api/analytics/overview", authenticate, async (req: AuthRequest, res) => {
     try {
       const posts = await storage.getPostsWithAnalytics(req.userId!, 100);
