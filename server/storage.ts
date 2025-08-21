@@ -80,6 +80,7 @@ export class MemStorage implements IStorage {
       accountHandle: "@demobusiness",
       avatar: "https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=100&h=100&fit=crop",
       status: "connected",
+      accessToken: "encrypted_token_facebook",
       lastSyncAt: new Date(),
       createdAt: new Date(),
     };
@@ -93,6 +94,7 @@ export class MemStorage implements IStorage {
       accountHandle: "@demobusiness",
       avatar: "https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=100&h=100&fit=crop",
       status: "connected",
+      accessToken: "encrypted_token_instagram",
       lastSyncAt: new Date(),
       createdAt: new Date(),
     };
@@ -106,6 +108,7 @@ export class MemStorage implements IStorage {
       accountHandle: "@demobusiness",
       avatar: "https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=100&h=100&fit=crop",
       status: "connected",
+      accessToken: "encrypted_token_twitter",
       lastSyncAt: new Date(),
       createdAt: new Date(),
     };
@@ -133,6 +136,12 @@ export class MemStorage implements IStorage {
     const user: User = {
       ...insertUser,
       id,
+      role: insertUser.role || "user",
+      firstName: insertUser.firstName || null,
+      lastName: insertUser.lastName || null,
+      profileKey: insertUser.profileKey || null,
+      avatar: insertUser.avatar || null,
+      isActive: insertUser.isActive !== undefined ? insertUser.isActive : true,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -180,6 +189,11 @@ export class MemStorage implements IStorage {
     const account: SocialAccount = {
       ...insertAccount,
       id,
+      status: insertAccount.status || "pending",
+      avatar: insertAccount.avatar || null,
+      accountHandle: insertAccount.accountHandle || null,
+      accessToken: insertAccount.accessToken || null,
+      lastSyncAt: insertAccount.lastSyncAt || null,
       createdAt: new Date(),
     };
     this.socialAccounts.set(id, account);
@@ -240,6 +254,15 @@ export class MemStorage implements IStorage {
     const post: Post = {
       ...insertPost,
       id,
+      title: insertPost.title || null,
+      status: insertPost.status || "draft",
+      mediaUrls: insertPost.mediaUrls || null,
+      platforms: Array.isArray(insertPost.platforms) ? insertPost.platforms : [],
+      scheduledAt: insertPost.scheduledAt || null,
+      publishedAt: insertPost.publishedAt || null,
+      ayrsharePostId: insertPost.ayrsharePostId || null,
+      platformResults: insertPost.platformResults || null,
+      isTemplate: insertPost.isTemplate || false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -285,6 +308,9 @@ export class MemStorage implements IStorage {
     const member: TeamMember = {
       ...insertMember,
       id,
+      role: insertMember.role || "editor",
+      permissions: insertMember.permissions || null,
+      invitedBy: insertMember.invitedBy || null,
       joinedAt: new Date(),
     };
     this.teamMembers.set(id, member);
@@ -320,6 +346,13 @@ export class MemStorage implements IStorage {
     const analytics: Analytics = {
       ...insertAnalytics,
       id,
+      impressions: insertAnalytics.impressions || null,
+      likes: insertAnalytics.likes || null,
+      shares: insertAnalytics.shares || null,
+      comments: insertAnalytics.comments || null,
+      clicks: insertAnalytics.clicks || null,
+      engagementRate: insertAnalytics.engagementRate || null,
+      rawData: insertAnalytics.rawData || null,
       updatedAt: new Date(),
     };
     this.analytics.set(id, analytics);

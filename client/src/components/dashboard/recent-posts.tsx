@@ -73,7 +73,7 @@ export default function RecentPosts() {
         </div>
         
         <div className="space-y-4">
-          {posts?.length ? (
+          {Array.isArray(posts) && posts.length ? (
             posts.map((post: any) => (
               <div key={post.id} className="flex items-start space-x-4 p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
                 <img 

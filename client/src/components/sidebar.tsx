@@ -89,7 +89,7 @@ export default function Sidebar({ isOpen, onClose, onOpenCompose, onOpenConnect 
                 {t("Connected Accounts", "บัญชีที่เชื่อมต่อ")}
               </h3>
               <div className="space-y-3">
-                {socialAccounts?.length ? (
+                {Array.isArray(socialAccounts) && socialAccounts.length ? (
                   socialAccounts.map((account: any) => (
                     <div key={account.id} className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">

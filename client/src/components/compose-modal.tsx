@@ -94,9 +94,10 @@ export default function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
     createPostMutation.mutate(data);
   };
 
-  const connectedPlatforms = socialAccounts?.filter((account: any) => 
-    account.status === "connected"
-  ).map((account: any) => account.platform) || [];
+  const connectedPlatforms = Array.isArray(socialAccounts) 
+    ? socialAccounts.filter((account: any) => account.status === "connected")
+        .map((account: any) => account.platform) 
+    : [];
 
   const availablePlatforms = PLATFORMS.filter(platform => 
     connectedPlatforms.includes(platform.id)

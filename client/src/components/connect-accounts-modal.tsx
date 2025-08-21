@@ -81,7 +81,7 @@ export default function ConnectAccountsModal({ isOpen, onClose }: ConnectAccount
   });
 
   const getAccountStatus = (platformId: string) => {
-    if (!socialAccounts) return null;
+    if (!Array.isArray(socialAccounts)) return null;
     return socialAccounts.find((account: any) => account.platform === platformId);
   };
 
@@ -116,7 +116,9 @@ export default function ConnectAccountsModal({ isOpen, onClose }: ConnectAccount
     );
   }
 
-  const connectedCount = socialAccounts?.filter((account: any) => account.status === "connected").length || 0;
+  const connectedCount = Array.isArray(socialAccounts) 
+    ? socialAccounts.filter((account: any) => account.status === "connected").length 
+    : 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

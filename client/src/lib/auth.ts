@@ -84,17 +84,15 @@ export function useAuth() {
     enabled: !!authState.user && !!localStorage.getItem("token"),
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: false,
-    onSuccess: (userData) => {
-      if (userData) {
-        localStorage.setItem("user", JSON.stringify(userData));
-        updateAuthState({ user: userData });
-      }
-    },
-    onError: () => {
-      // Token is invalid, clear auth state
-      logout();
-    },
   });
+
+  // Handle user data updates
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem("user", JSON.stringify(currentUser));
+      updateAuthState({ user: currentUser as any });
+    }
+  }, [currentUser]);
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginData): Promise<AuthResponse> => {

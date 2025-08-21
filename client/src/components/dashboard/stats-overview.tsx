@@ -19,7 +19,7 @@ export default function StatsOverview() {
   const stats = [
     {
       title: t("Total Posts", "โพสต์ทั้งหมด"),
-      value: overview?.totalPosts || 247,
+      value: (overview as any)?.totalPosts || 247,
       change: t("+12% from last month", "+12% จากเดือนที่แล้ว"),
       changeType: "positive",
       icon: "fas fa-paper-plane",
@@ -27,7 +27,7 @@ export default function StatsOverview() {
     },
     {
       title: t("Scheduled", "กำหนดการ"),
-      value: scheduledPosts?.length || 18,
+      value: Array.isArray(scheduledPosts) ? scheduledPosts.length : 18,
       change: t("Next: Today 3:00 PM", "ถัดไป: วันนี้ 15:00 น."),
       changeType: "info",
       icon: "fas fa-clock",
@@ -35,7 +35,7 @@ export default function StatsOverview() {
     },
     {
       title: t("Engagement Rate", "อัตราการมีส่วนร่วม"),
-      value: `${overview?.avgEngagementRate?.toFixed(1) || "4.2"}%`,
+      value: `${(overview as any)?.avgEngagementRate?.toFixed(1) || "4.2"}%`,
       change: t("+0.8% this week", "+0.8% สัปดาห์นี้"),
       changeType: "positive",
       icon: "fas fa-heart",
@@ -43,7 +43,7 @@ export default function StatsOverview() {
     },
     {
       title: t("Team Members", "สมาชิกทีม"),
-      value: teamMembers?.length || 8,
+      value: Array.isArray(teamMembers) ? teamMembers.length : 8,
       change: t("2 admins, 6 editors", "2 แอดมิน, 6 เอดิเตอร์"),
       changeType: "neutral",
       icon: "fas fa-users",

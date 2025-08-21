@@ -91,7 +91,7 @@ export default function UpcomingPosts() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {scheduledPosts?.length ? (
+            {Array.isArray(scheduledPosts) && scheduledPosts.length ? (
               scheduledPosts.map((post: any) => (
                 <tr key={post.id} className="hover:bg-gray-50 transition-colors">
                   <td className="py-4 px-4">
